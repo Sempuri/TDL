@@ -16,7 +16,6 @@ mongoose.connect(uri, { useNewUrlParser: true, useUnifiedTopology: true })
    .then(() => console.log('MongoDB connected'))
    .catch(err => console.log(err));
 
-
 // Task schema and model
 const taskSchema = new mongoose.Schema({
    text: String,
@@ -24,13 +23,7 @@ const taskSchema = new mongoose.Schema({
    lastUpdated: { type: Date, default: Date.now }
 });
 
-
-
-
 const Task = mongoose.model('Task', taskSchema);
-
-
-
 
 // Routes
 app.get('/tasks', async (req, res) => {
@@ -42,7 +35,6 @@ app.get('/tasks', async (req, res) => {
        res.status(500).json({ message: err.message });
    }
 });
-
 
 app.get('/tasks/:id', async (req, res) => {
     try {
@@ -57,14 +49,11 @@ app.get('/tasks/:id', async (req, res) => {
     }
 });
 
-
 app.post('/tasks', async (req, res) => {
    const task = new Task({
        text: req.body.text,
        completed: req.body.completed
    });
-
-
    try {
        const newTask = await task.save();
        res.status(201).json(newTask);
@@ -74,9 +63,6 @@ app.post('/tasks', async (req, res) => {
    }
 });
 
-
-
-
 app.delete('/tasks/:id', async (req, res) => {
    try {
        const deletedTask = await Task.findByIdAndDelete(req.params.id);
@@ -84,16 +70,12 @@ app.delete('/tasks/:id', async (req, res) => {
        if (!deletedTask) {
            return res.status(404).json({ message: 'Task not found' });
        }
-     
        res.json({ message: 'Task deleted successfully' });
    } catch (err) {
        console.error('Error deleting task:', err);
        res.status(500).json({ message: err.message });
    }
 });
-
-
-
 
 app.patch('/tasks/:id', async (req, res) => {
    try {
@@ -106,26 +88,16 @@ app.patch('/tasks/:id', async (req, res) => {
            },
            { new: true }
        );
-
-
-
-
+      
        if (!updatedTask) {
            return res.status(404).json({ message: 'Task not found' });
        }
-
-
-
-
        res.json(updatedTask);
    } catch (err) {
        console.error('Error updating task:', err);
        res.status(400).json({ message: err.message });
    }
 });
-
-
-
 
 app.listen(port, () => {
    console.log(`Server running on port ${port}`);
