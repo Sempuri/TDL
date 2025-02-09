@@ -7,7 +7,7 @@
 <p><a href="https://drive.google.com/drive/folders/1BlTNUR3EBEmSfEw4cz28C8tjMemD3kOv?usp=sharing" target="_blank">View API Testing Results</a></p>
 <h2>How to Use</h2>
 <ul>
-<li>- <strong>Refer to the Unified API Plan</strong> to understand available endpoints and request formats.</li>
-<li>- <strong>Check API Testing Results</strong> to verify expected responses.</li>
-<li>- <strong>Use tools like Postman, cURL, or a frontend application</strong> to interact with the API.</li>
+<li><strong>Refer to the Unified API Plan</strong> to understand available endpoints and request formats.</li>
+<li><strong>Check API Testing Results</strong> to verify expected responses.</li>
+<li><strong>Use tools like Postman, cURL, or a frontend application</strong> to interact with the API.</li>
 </ul>
