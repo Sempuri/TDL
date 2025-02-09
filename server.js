@@ -44,6 +44,18 @@ app.get('/tasks', async (req, res) => {
 });
 
 
+app.get('/tasks/:id', async (req, res) => {
+    try {
+        const task = await Task.findById(req.params.id);
+        if (!task) {
+            return res.status(404).json({ message: 'Task not found' });
+        }
+        res.json(task);
+    } catch (err) {
+        console.error('Error fetching task:', err);
+        res.status(500).json({ message: err.message });
+    }
+});
 
 
 app.post('/tasks', async (req, res) => {
@@ -51,8 +63,6 @@ app.post('/tasks', async (req, res) => {
        text: req.body.text,
        completed: req.body.completed
    });
-
-
 
 
    try {
