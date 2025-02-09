@@ -8,5 +8,5 @@
 <ul>
 <li><strong>Refer to the Unified API Plan</strong> to understand available endpoints and request formats.</li>
 <li><strong>Check API Testing Results</strong> to verify expected responses.</li>
-<li><strong>Use tools like Postman, cURL, or a frontend application</strong> to interact with the API.</li>
+<li><strong>Use Postman, cURL, or a frontend application</strong> to test the API of the application.</li>
 </ul>
