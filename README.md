@@ -1,5 +1,4 @@
 <h1>My To-Do List</h1>
-<h2>Introduction</h2>
 <p>This project is a <strong>To-Do List Application</strong> that allows users to create, manage, and track their tasks.</p>
 <h2><h2>Unified API Plan</h2></h2>
 <p><a href="https://docs.google.com/spreadsheets/d/11epSuW_LIKTe9evlAIfB8dAIiE9WfbZPfCP_tML8V8o/edit?usp=sharing" target="_blank">View Unified API Plan</a></p>
