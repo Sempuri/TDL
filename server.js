@@ -11,6 +11,7 @@ const helmet = require("helmet");
 const path = require("path");
 const fs = require("fs");
 const crypto = require("crypto");
+const rateLimit = require("express-rate-limit");
 require("dotenv").config();
 const app = express();
 const port = process.env.PORT || 5001;
@@ -201,6 +202,26 @@ app.get(HTML_ROUTES, (req, res, next) => {
     res.type("html").send(injected);
   });
 });
+
+/* ------------------------------------------------------------------ */
+/*  Rate Limiter for Export (GET /tasks)                               */
+/* ------------------------------------------------------------------ */
+const exportLimiter = rateLimit({
+  windowMs: 60 * 60 * 1000, // 1 hour
+  max: 5, // Limit each user to 5 requests per hour
+  message: {
+    status: "error",
+    code: 429,
+    message: "Too many export requests, please try again after an hour.",
+  },
+  standardHeaders: true, // Return rate limit info in the `RateLimit-*` headers
+  legacyHeaders: false, // Disable the `X-RateLimit-*` headers
+  keyGenerator: (req, res) => {
+    // Use the user's ID from the JWT to key the rate limit
+    return req.user ? req.user.id : req.ip;
+  },
+});
+
 /* ------------------------------------------------------------------ */
 /*  Middleware & Auth                                                  */
 /* ------------------------------------------------------------------ */
@@ -502,7 +523,7 @@ app.delete(
   }
 );
 /* Tasks */
-app.get("/tasks", authenticateJWT, async (req, res) => {
+app.get("/tasks", authenticateJWT, exportLimiter, async (req, res) => {
   try {
     const tasks = await Task.find({ userId: req.user.id });
     res.json(tasks);

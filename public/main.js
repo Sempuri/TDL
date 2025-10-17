@@ -38,151 +38,296 @@ window.addEventListener("load", async () => {
     .querySelector("#file-input")
     .addEventListener("change", async (event) => {
       const file = event.target.files[0];
-      if (file) {
+      if (!file) return;
+
+      if (file.name.endsWith(".bin")) {
+        // Handle encrypted file
+        const password = prompt(
+          "This file is encrypted. Please enter the password to decrypt it:"
+        );
+        if (!password) {
+          alert("Import cancelled. Password is required.");
+          document.querySelector("#file-input").value = ""; // Reset input
+          return;
+        }
+
         const reader = new FileReader();
         reader.onload = async (e) => {
           try {
-            // Get current user first
-            const userResponse = await fetch("/api/current_user", {
-              credentials: "include",
-            });
-            const user = await userResponse.json();
-
-            if (!user) {
-              alert("Please log in to import tasks.");
-              return;
-            }
-
-            let tasks;
-            try {
-              tasks = JSON.parse(e.target.result);
-              if (!Array.isArray(tasks)) {
-                throw new Error("Imported data is not an array of tasks");
-              }
-            } catch (parseError) {
-              alert("Invalid JSON format. Please check your file.");
-              console.error("JSON parse error:", parseError);
-              return;
-            }
-
-            let successCount = 0;
-            let errorCount = 0;
-
-            // Process each task with proper validation
-            for (const task of tasks) {
-              // Validate the task has the required text field
-              let taskText = null;
-
-              // Check various possible field names in the imported JSON
-              if (task.text) taskText = task.text;
-              else if (task.task) taskText = task.task;
-              else if (task.content) taskText = task.content;
-              else if (task.description) taskText = task.description;
-
-              // Skip tasks without text
-              if (
-                !taskText ||
-                typeof taskText !== "string" ||
-                taskText.trim() === ""
-              ) {
-                console.error(
-                  "Skipping task with missing or invalid text:",
-                  task
-                );
-                errorCount++;
-                continue;
-              }
-
-              const newTask = {
-                text: taskText.trim(),
-                completed: Boolean(
-                  task.completed || task.status === "completed" || task.done
-                ),
-                userId: user._id,
-                lastUpdated: new Date().toISOString(),
-              };
-
-              try {
-                const response = await fetch("/tasks", {
-                  method: "POST",
-                  credentials: "include",
-                  headers: {
-                    "Content-Type": "application/json",
-                  },
-                  body: JSON.stringify(newTask),
-                });
-
-                if (!response.ok) {
-                  const errorData = await response.json();
-                  throw new Error(
-                    `Server error: ${errorData.message || response.statusText}`
-                  );
-                }
-
-                successCount++;
-              } catch (taskError) {
-                console.error("Error creating task:", taskError);
-                errorCount++;
-              }
-            }
-
-            // Refresh the task list
-            await fetchTasks();
-
-            // Show result to user
-            if (successCount > 0 && errorCount === 0) {
-              alert(`Successfully imported ${successCount} tasks.`);
-            } else if (successCount > 0 && errorCount > 0) {
-              alert(
-                `Imported ${successCount} tasks successfully, but ${errorCount} tasks could not be imported due to errors. Check console for details.`
-              );
-            } else {
-              alert(
-                `Failed to import any tasks. Please check if the file format is correct.`
-              );
-            }
-
-            // Reset the file input
-            document.querySelector("#file-input").value = "";
+            const decryptedJson = await decryptData(e.target.result, password);
+            await processImportedTasks(JSON.parse(decryptedJson));
           } catch (error) {
-            console.error("Error during import process:", error);
-            alert("An error occurred during import. Please try again.");
-            document.querySelector("#file-input").value = "";
+            console.error("Decryption failed:", error);
+            alert(
+              "Decryption failed. The password may be incorrect or the file may be corrupted."
+            );
+          } finally {
+            document.querySelector("#file-input").value = ""; // Reset input
+          }
+        };
+        reader.readAsArrayBuffer(file);
+      } else if (file.name.endsWith(".json")) {
+        // Handle unencrypted JSON file (for backward compatibility)
+        const reader = new FileReader();
+        reader.onload = async (e) => {
+          try {
+            const tasks = JSON.parse(e.target.result);
+            await processImportedTasks(tasks);
+          } catch (error) {
+            alert("Invalid JSON format. Please check your file.");
+            console.error("JSON parse error:", error);
+          } finally {
+            document.querySelector("#file-input").value = ""; // Reset input
           }
         };
         reader.readAsText(file);
+      } else {
+        alert("Unsupported file type. Please select a .json or .bin file.");
+        document.querySelector("#file-input").value = ""; // Reset input
       }
     });
+
+  // This is a new helper function to avoid duplicating the task processing logic.
+  // You can move the logic from your old file-input listener into here.
+  async function processImportedTasks(tasks) {
+    if (!Array.isArray(tasks)) {
+      alert("Imported data is not in the correct format.");
+      return;
+    }
+
+    const userResponse = await fetch("/api/current_user", {
+      credentials: "include",
+    });
+    const user = await userResponse.json();
+    if (!user) {
+      alert("Please log in to import tasks.");
+      return;
+    }
+
+    let successCount = 0;
+    let errorCount = 0;
+
+    for (const task of tasks) {
+      let taskText = task.text || task.task || task.content || task.description;
+      if (!taskText || typeof taskText !== "string" || taskText.trim() === "") {
+        errorCount++;
+        continue;
+      }
+
+      const newTask = {
+        text: taskText.trim(),
+        completed: Boolean(
+          task.completed || task.status === "completed" || task.done
+        ),
+        userId: user._id,
+        lastUpdated: new Date().toISOString(),
+      };
+
+      try {
+        const response = await fetch("/tasks", {
+          method: "POST",
+          credentials: "include",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(newTask),
+        });
+        if (response.ok) {
+          successCount++;
+        } else {
+          errorCount++;
+        }
+      } catch {
+        errorCount++;
+      }
+    }
+
+    await fetchTasks();
+
+    if (successCount > 0) {
+      alert(`Successfully imported ${successCount} tasks.`);
+    } else {
+      alert(
+        "Failed to import tasks. Please check the file and console for errors."
+      );
+    }
+  }
 
   // export functionality
   document
     .querySelector("#export-button")
     .addEventListener("click", async () => {
-      const response = await fetch("/tasks", { credentials: "include" });
-      const tasks = await response.json();
+      const password = prompt(
+        "Please enter a password to encrypt this file.\n\nWARNING: This password cannot be recovered. If you forget it, this file cannot be opened."
+      );
 
-      // Check if there are any tasks
-      if (tasks.length === 0) {
-        alert("Cannot export: your task list is empty!");
-        return; // Stop execution if there are no tasks
+      if (!password) {
+        alert("Export cancelled.");
+        return;
       }
 
-      // Convert tasks to JSON format
-      const jsonTasks = JSON.stringify(tasks, null, 2); // Pretty print with 2 spaces
+      const confirmPassword = prompt("Please confirm your password:");
 
-      // Create a blob from the JSON string
-      const blob = new Blob([jsonTasks], { type: "application/json" });
-      const url = URL.createObjectURL(blob);
+      if (password !== confirmPassword) {
+        alert("Passwords do not match. Export cancelled.");
+        return;
+      }
 
-      // Create a temporary link element to trigger the download
-      const a = document.createElement("a");
-      a.href = url;
-      a.download = `tasks_${new Date().toISOString().split("T")[0]}.json`; // Filename with today's date
-      document.body.appendChild(a);
-      a.click(); // Trigger the download
-      document.body.removeChild(a); // Clean up
-      URL.revokeObjectURL(url); // Release the blob URL
+      try {
+        const response = await fetch("/tasks", { credentials: "include" });
+
+        //check to handle rate limiting and other errors
+        if (!response.ok) {
+          if (response.status === 429) {
+            const errorData = await response.json();
+            alert(
+              errorData.message || "Too many requests. Please try again later."
+            );
+          } else {
+            alert(`Error fetching tasks: ${response.statusText}`);
+          }
+          return; // Stop the export process
+        }
+
+        const tasks = await response.json();
+
+        if (tasks.length === 0) {
+          alert("Cannot export: your task list is empty!");
+          return;
+        }
+
+        const jsonTasks = JSON.stringify(tasks, null, 2);
+        const encryptedData = await encryptData(jsonTasks, password);
+
+        const blob = new Blob([encryptedData], {
+          type: "application/octet-stream",
+        });
+        const url = URL.createObjectURL(blob);
+
+        const a = document.createElement("a");
+        a.href = url;
+        a.download = `tasks_encrypted_${
+          new Date().toISOString().split("T")[0]
+        }.bin`;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+
+        alert(
+          "Export successful! The encrypted file has been saved.\n\nIMPORTANT: Remember the password you just used. It is required to open this file."
+        );
+      } catch (error) {
+        console.error("Error during encrypted export:", error);
+        alert("An error occurred during the export process.");
+      }
     });
+
+  /**
+   * Encrypts data using AES-256-GCM with a password-derived key.
+   * @param {string} plaintext - The data to encrypt.
+   * @param {string} password - The user's password.
+   * @returns {Promise<ArrayBuffer>} - The encrypted data (salt + IV + ciphertext).
+   */
+  async function encryptData(plaintext, password) {
+    const textEncoder = new TextEncoder();
+    const data = textEncoder.encode(plaintext);
+
+    // Generate a random salt for key derivation
+    const salt = window.crypto.getRandomValues(new Uint8Array(16));
+
+    // Derive a key from the password and salt using PBKDF2
+    const keyMaterial = await window.crypto.subtle.importKey(
+      "raw",
+      textEncoder.encode(password),
+      { name: "PBKDF2" },
+      false,
+      ["deriveKey"]
+    );
+    const key = await window.crypto.subtle.deriveKey(
+      {
+        name: "PBKDF2",
+        salt: salt,
+        iterations: 100000,
+        hash: "SHA-256",
+      },
+      keyMaterial,
+      { name: "AES-GCM", length: 256 },
+      true,
+      ["encrypt", "decrypt"]
+    );
+
+    // Generate a random Initialization Vector (IV)
+    const iv = window.crypto.getRandomValues(new Uint8Array(12));
+
+    // Encrypt the data
+    const encryptedContent = await window.crypto.subtle.encrypt(
+      {
+        name: "AES-GCM",
+        iv: iv,
+      },
+      key,
+      data
+    );
+
+    // Combine salt, IV, and ciphertext into a single buffer for storage
+    const result = new Uint8Array(
+      salt.length + iv.length + encryptedContent.byteLength
+    );
+    result.set(salt, 0);
+    result.set(iv, salt.length);
+    result.set(new Uint8Array(encryptedContent), salt.length + iv.length);
+
+    return result.buffer;
+  }
+
+  /**
+   * Decrypts data using AES-256-GCM with a password-derived key.
+   * @param {ArrayBuffer} encryptedData - The data to decrypt (salt + IV + ciphertext).
+   * @param {string} password - The user's password.
+   * @returns {Promise<string>} - The decrypted plaintext.
+   */
+  async function decryptData(encryptedData, password) {
+    const textEncoder = new TextEncoder();
+    const textDecoder = new TextDecoder();
+    const data = new Uint8Array(encryptedData);
+
+    // Extract salt and IV from the beginning of the data
+    const salt = data.slice(0, 16);
+    const iv = data.slice(16, 28);
+    const ciphertext = data.slice(28);
+
+    // Derive the key from the password and salt
+    const keyMaterial = await window.crypto.subtle.importKey(
+      "raw",
+      textEncoder.encode(password),
+      { name: "PBKDF2" },
+      false,
+      ["deriveKey"]
+    );
+    const key = await window.crypto.subtle.deriveKey(
+      {
+        name: "PBKDF2",
+        salt: salt,
+        iterations: 100000,
+        hash: "SHA-256",
+      },
+      keyMaterial,
+      { name: "AES-GCM", length: 256 },
+      true,
+      ["encrypt", "decrypt"]
+    );
+
+    // Decrypt the data
+    const decryptedContent = await window.crypto.subtle.decrypt(
+      {
+        name: "AES-GCM",
+        iv: iv,
+      },
+      key,
+      ciphertext
+    );
+
+    return textDecoder.decode(decryptedContent);
+  }
 
   // Add "Random Activity" Button
   const randomActivityBtn = document.createElement("button");
