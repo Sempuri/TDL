@@ -1,0 +1,45 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Admin Dashboard</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+  </head>
+  <body
+    class="bg-gray-900 text-white flex justify-center items-center min-h-screen"
+  >
+    <div
+      class="max-w-2xl w-full mx-auto relative overflow-hidden z-10 bg-gray-800 p-8 rounded-lg shadow-lg before:w-24 before:h-24 before:absolute before:bg-purple-600 before:rounded-full before:-z-10 before:blur-2xl after:w-32 after:h-32 after:absolute after:bg-sky-400 after:rounded-full after:-z-10 after:blur-xl after:top-24 after:-right-12"
+    >
+      <h1 class="text-3xl font-bold text-center mb-6">Admin Dashboard</h1>
+
+      <div class="flex justify-between mb-6">
+        <button
+          id="todoListBtn"
+          class="bg-blue-500 px-4 py-2 rounded-md font-bold hover:opacity-80"
+        >
+          ↩️ Return
+        </button>
+        <button
+          id="loadUsersBtn"
+          class="bg-purple-600 px-4 py-2 rounded-md font-bold hover:opacity-80"
+        >
+          👤 Load Users
+        </button>
+        <button
+          id="logoutBtn"
+          class="bg-red-500 px-4 py-2 rounded-md font-bold hover:opacity-80"
+        >
+          🚪 Logout
+        </button>
+      </div>
+
+      <div id="userList" class="space-y-4 hidden">
+        <!-- User list will be loaded here -->
+      </div>
+    </div>
+    <script src="main.js"></script>
+    <script src="admin-dashboard.inline.js" defer></script>
+  </body>
+</html>

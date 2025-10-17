@@ -1,0 +1,97 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>To-Do List</title>
+
+    <link rel="stylesheet" href="style.css">
+    
+</head>
+<body>
+    <!-- Background Overlay -->
+    <div class="background-overlay"></div>
+    <header>
+        <div class="header-content">
+            <button id="cycle-images-button"></button>
+            <h1>My To-Do List</h1>
+            <!-- Popup Button -->
+            <div class="popup">
+                <div class="burger" tabindex="0">
+                    <span></span>
+                    <span></span>
+                    <span></span>
+                </div>
+                <nav class="popup-window">
+                    <legend>Manage</legend>
+                    <ul>
+                        <li>
+                            <button id="import-button">
+                                <svg stroke-linejoin="round" stroke-linecap="round" stroke-width="2" stroke="currentColor" fill="none" viewBox="0 0 24 24" height="14" width="14" xmlns="http://www.w3.org/2000/svg">
+                                    <path d="M12 3v12"></path>
+                                    <path d="M5 12l7 7 7-7"></path>
+                                    <path d="M19 21H5"></path>
+                                </svg>
+                                <span>Import</span>
+                            </button>
+                            <input type="file" id="file-input" accept=".json" class="hidden">
+                        </li>
+                        <li>
+                            <button id="export-button">
+                                <svg stroke-linejoin="round" stroke-linecap="round" stroke-width="2" stroke="currentColor" fill="none" viewBox="0 0 24 24" height="14" width="14" xmlns="http://www.w3.org/2000/svg">
+                                    <path d="M12 21V9"></path>
+                                    <path d="M5 12l7-7 7 7"></path>
+                                    <path d="M19 3H5"></path>
+                                </svg>
+                                <span>Export</span>
+                            </button>
+                        </li>
+                        <li>
+                            <hr>
+                        </li>
+                        <li id="manage-dashboard-button" class="hidden">
+                            <button id="manage-dashboard">
+                                <span>Dashboard</span>
+                            </button>
+                        </li>
+                        <hr>
+                        <li>
+                            <button id="logout-button" class="hidden">Logout</button>
+                        </li>
+                    </ul>
+                </nav>
+            </div>
+        <!-- End Popup -->
+        </div>
+        <form id="to-do-form">
+            <input 
+                type="text"
+                id="new-task-input" 
+                placeholder="What do you need to do today?"
+                maxlength="50">
+            <input
+                type="submit"
+                id="add-task-button"
+                value="+">
+        </form>
+    </header>
+
+    <main>
+        <section class="task-list">
+            <div class="task-list-header">
+                <h2>Tasks</h2>
+                <select id="filter-tasks">
+                    <option value="all"selected>All</option>
+                    <option value="in-progress">In Progress</option>
+                    <option value="completed">Completed</option>
+                </select>
+            </div>
+            <div id="tasks"></div>
+            </div>
+        </section>
+    </main>
+
+    <script src="main.js"></script>
+    <script src="index.inline.js" defer></script>
+</body>
+</html>
