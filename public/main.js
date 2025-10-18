@@ -29,6 +29,16 @@ window.addEventListener("load", async () => {
     });
   }
 
+  // Add this block to handle the dashboard button visibility
+  const manageBtn = document.getElementById("manage-dashboard-button");
+  if (manageBtn) {
+    if (user && user.role === "admin") {
+      manageBtn.classList.remove("hidden");
+    } else {
+      manageBtn.classList.add("hidden");
+    }
+  }
+
   // import functionality
   document.querySelector("#import-button").addEventListener("click", () => {
     document.querySelector("#file-input").click(); // Trigger file input click
@@ -172,7 +182,10 @@ window.addEventListener("load", async () => {
       }
 
       try {
-        const response = await fetch("/tasks", { credentials: "include" });
+        // Point the export fetch to the new rate-limited endpoint
+        const response = await fetch("/api/export/tasks", {
+          credentials: "include",
+        });
 
         //check to handle rate limiting and other errors
         if (!response.ok) {

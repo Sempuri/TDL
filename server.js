@@ -62,7 +62,7 @@ app.use((req, res, next) => {
     // allow a specific inline script by its sha256 hash in addition to the nonce
     `script-src 'self' 'nonce-${nonce}' https://cdn.jsdelivr.net https://cdn.tailwindcss.com https://apis.scrimba.com 'sha256-ZswfTY7H35rbv8WC7NXBoiC7WNu86vSzCDChNWwZZDM='`,
     // Nonce for any inline <style> (we also inject it). CDN style origins allowed.
-    `style-src 'self' 'nonce-${nonce}' https://cdn.jsdelivr.net https://cdn.tailwindcss.com`,
+    `style-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net https://cdn.tailwindcss.com`,
     // Your images + data URLs + S3 bucket (if configured)
     `img-src 'self' data: https://upload.wikimedia.org https://ucarecdn.com${
       s3Origin ? " " + s3Origin : ""
@@ -297,7 +297,26 @@ const userSchema = new mongoose.Schema({
   displayName: String,
   email: String,
   role: { type: String, enum: ["user", "admin"], default: "user" },
+  consentGiven: { type: Boolean, default: false },
+  consentTimestamp: { type: Date },
+  consentPolicyVersion: { type: String },
 });
+
+userSchema.pre(
+  "deleteOne",
+  { document: true, query: false },
+  async function (next) {
+    try {
+      // `this` is the user document being removed.
+      // Delete all tasks where the userId matches this user's ID.
+      await mongoose.model("Task").deleteMany({ userId: this._id });
+      next();
+    } catch (err) {
+      next(err);
+    }
+  }
+);
+
 const taskSchema = new mongoose.Schema({
   text: { type: String, required: true },
   completed: { type: Boolean, default: false },
@@ -403,7 +422,12 @@ app.get(
       secure: process.env.NODE_ENV === "production",
       sameSite: process.env.NODE_ENV === "production" ? "None" : "Lax",
     });
-    return res.redirect("/");
+    // Redirect based on consent status
+    if (req.user.consentGiven) {
+      return res.redirect("/");
+    } else {
+      return res.redirect("/consent");
+    }
   }
 );
 app.post("/auth/logout", authenticateJWT, (req, res) => {
@@ -428,6 +452,35 @@ app.get("/logout", authenticateJWT, (req, res) => {
     });
   });
 });
+
+/* ------------------------------------------------------------------ */
+/*  Consent Routes                                                     */
+/* ------------------------------------------------------------------ */
+app.get("/consent", authenticateJWT, (req, res) => {
+  // This route is accessible if the user is logged in but hasn't given consent
+  res.sendFile(path.join(__dirname, "public", "consent.html"));
+});
+
+app.post("/api/consent", authenticateJWT, async (req, res) => {
+  try {
+    const { consentGiven, policyVersion } = req.body;
+    if (consentGiven !== true) {
+      return res.status(400).json({ message: "Consent must be given." });
+    }
+
+    await User.findByIdAndUpdate(req.user.id, {
+      consentGiven: true,
+      consentTimestamp: new Date(),
+      consentPolicyVersion: policyVersion || "1.0",
+    });
+
+    res.status(200).json({ message: "Consent recorded successfully." });
+  } catch (err) {
+    console.error("Error recording consent:", err);
+    res.status(500).json({ message: "Server error while recording consent." });
+  }
+});
+
 /* ------------------------------------------------------------------ */
 /*  App routes                                                         */
 /* ------------------------------------------------------------------ */
@@ -512,18 +565,43 @@ app.delete(
   checkRole("admin"),
   async (req, res) => {
     try {
-      const deletedUser = await User.findByIdAndDelete(req.params.id);
-      if (!deletedUser)
+      // Find the user document first
+      const userToDelete = await User.findById(req.params.id);
+      if (!userToDelete) {
         return res.status(404).json({ message: "User not found" });
-      res.json({ message: "User deleted successfully" });
+      }
+
+      // Calling .deleteOne() on the document instance triggers the middleware
+      await userToDelete.deleteOne();
+
+      res.json({
+        message: "User and all associated tasks deleted successfully",
+      });
     } catch (err) {
       console.error("Error deleting user:", err);
       res.status(500).json({ message: err.message });
     }
   }
 );
+
+/* New dedicated route for exporting tasks with rate limiting */
+app.get(
+  "/api/export/tasks",
+  authenticateJWT,
+  exportLimiter,
+  async (req, res) => {
+    try {
+      const tasks = await Task.find({ userId: req.user.id });
+      res.json(tasks);
+    } catch (err) {
+      console.error("Error fetching tasks for export:", err);
+      res.status(500).json({ message: err.message });
+    }
+  }
+);
+
 /* Tasks */
-app.get("/tasks", authenticateJWT, exportLimiter, async (req, res) => {
+app.get("/tasks", authenticateJWT, async (req, res) => {
   try {
     const tasks = await Task.find({ userId: req.user.id });
     res.json(tasks);
@@ -532,6 +610,7 @@ app.get("/tasks", authenticateJWT, exportLimiter, async (req, res) => {
     res.status(500).json({ message: err.message });
   }
 });
+
 app.get("/tasks/:id", authenticateJWT, async (req, res) => {
   try {
     const task = await Task.findById(req.params.id);
