@@ -260,34 +260,44 @@ mongoose
 /* ------------------------------------------------------------------ */
 /*  JWT guard                                                          */
 /* ------------------------------------------------------------------ */
-const authenticateJWT = (req, res, next) => {
+// Replace the whole authenticateJWT with this
+const authenticateJWT = async (req, res, next) => {
   const token = req.cookies.token;
+  const wantsJson = req.accepts("json") || req.path.startsWith("/api/");
+
   if (!token) {
-    const wantsJson = req.accepts("json") || req.path.startsWith("/api/");
-    if (wantsJson) {
-      return res.status(401).json({
-        status: "error",
-        code: 401,
-        message: "Unauthorized. Please log in.",
-      });
-    }
-    return res.redirect("/login");
+    return wantsJson
+      ? res.status(401).json({ status: "error", code: 401, message: "Unauthorized. Please log in." })
+      : res.redirect("/login");
   }
-  jwt.verify(token, process.env.JWT_SECRET, (err, user) => {
-    if (err) {
-      const wantsJson = req.accepts("json") || req.path.startsWith("/api/");
-      if (wantsJson) {
-        return res.status(403).json({
-          status: "error",
-          code: 403,
-          message: "Forbidden. Invalid or expired token.",
-        });
-      }
-      return res.redirect("/login");
+
+  let payload;
+  try {
+    payload = jwt.verify(token, process.env.JWT_SECRET);
+  } catch {
+    return wantsJson
+      ? res.status(403).json({ status: "error", code: 403, message: "Forbidden. Invalid or expired token." })
+      : res.redirect("/login");
+  }
+
+  try {
+    // CRITICAL: re-check that the user still exists
+    const dbUser = await User.findById(payload.id).select("role");
+    if (!dbUser) {
+      return wantsJson
+        ? res.status(401).json({ status: "error", code: 401, message: "Account deleted or disabled." })
+        : res.redirect("/login");
     }
-    req.user = user;
+
+    // Set a clean, trusted req.user (don’t rely on token role alone)
+    req.user = { id: dbUser._id.toString(), role: dbUser.role };
     next();
-  });
+  } catch (err) {
+    console.error("Auth DB check error:", err);
+    return wantsJson
+      ? res.status(500).json({ status: "error", code: 500, message: "Server error during authentication." })
+      : res.redirect("/login");
+  }
 };
 /* ------------------------------------------------------------------ */
 /*  Models                                                             */
