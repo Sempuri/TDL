@@ -58,24 +58,18 @@ app.use((req, res, next) => {
       : null;
   const csp = [
     "default-src 'self'",
-    // Nonce for any inline <script> (we also inject it). CDN script origins allowed.
-    // allow a specific inline script by its sha256 hash in addition to the nonce
     `script-src 'self' 'nonce-${nonce}' https://cdn.jsdelivr.net https://cdn.tailwindcss.com https://apis.scrimba.com 'sha256-ZswfTY7H35rbv8WC7NXBoiC7WNu86vSzCDChNWwZZDM='`,
-    // Nonce for any inline <style> (we also inject it). CDN style origins allowed.
-    `style-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net https://cdn.tailwindcss.com`,
-    // Your images + data URLs + S3 bucket (if configured)
-    `img-src 'self' data: https://upload.wikimedia.org https://ucarecdn.com${
-      s3Origin ? " " + s3Origin : ""
-    }`,
-    // Fetch/XHR/WebSocket endpoints
+    `style-src 'self' 'nonce-${nonce}' https://cdn.jsdelivr.net https://cdn.tailwindcss.com`,
+    `img-src 'self' data: https://upload.wikimedia.org https://ucarecdn.com${s3Origin ? " " + s3Origin : ""}`,
     `connect-src 'self' https://apis.scrimba.com`,
     "object-src 'none'",
     "base-uri 'self'",
     "frame-ancestors 'self'",
     "upgrade-insecure-requests",
-    // No wildcard scheme; only your own fonts or data URIs
     "font-src 'self' data:",
     "form-action 'self'",
+    "script-src-attr 'none'",
+    "style-src-attr 'none'",
   ].join("; ");
   res.setHeader("Content-Security-Policy", csp);
   next();
@@ -83,17 +77,9 @@ app.use((req, res, next) => {
 /* ------------------------------------------------------------------ */
 /*  HTML routes that inject NONCE into <script> and <style>            */
 /* ------------------------------------------------------------------ */
-const HTML_ROUTES = [
-  "/",
-  "/login",
-  "/admin/dashboard",
-  "/index.html",
-  "/admin-dashboard.html",
-  "/login.html",
-];
+const HTML_ROUTES = ["/login", "/login.html"];
 app.get(HTML_ROUTES, (req, res, next) => {
   let file = req.path === "/" ? "index.html" : req.path.replace(/^\//, "");
-  if (req.path === "/admin/dashboard") file = "admin-dashboard.html";
   // Ensure we resolve to an actual HTML file (e.g. '/login' -> 'login.html')
   if (!path.extname(file)) {
     file = `${file}.html`;
@@ -233,7 +219,6 @@ app.use(
   })
 );
 // Serve static files but DO NOT auto-index (we render HTML ourselves above)
-app.use(express.static(path.join(__dirname, "public"), { index: false }));
 app.use(
   session({
     secret: process.env.SESSION_SECRET || "your_secret_key",
@@ -366,6 +351,66 @@ const checkRole = (role) => (req, res, next) => {
   }
   next();
 };
+
+// Admin HTML with nonce injection
+app.get("/admin-dashboard.html",
+  authenticateJWT,
+  checkRole("admin"),
+  (req, res, next) => {
+    const filePath = path.join(__dirname, "public", "admin-dashboard.html");
+    fs.readFile(filePath, "utf8", (err, html) => {
+      if (err) return next(err);
+      const nonce = res.locals.cspNonce;
+
+      let out = html
+        .replace(/<script\b(?![^>]*\bsrc=)([^>]*)>/gi, `<script nonce="${nonce}"$1>`)
+        .replace(/<style\b([^>]*)>/gi, `<style nonce="${nonce}"$1>`);
+
+      const styleInject = `<style nonce="${nonce}" id="csp-stylefix"></style>`;
+      const headSuppress = `<script nonce="${nonce}">(function(){try{window.addEventListener('error',function(e){try{var msg=e&&(e.message||'');var src=e&&(e.filename||(e.error&&e.error.fileName)||'');if(typeof msg==='string'&& msg.indexOf('string literal contains an unescaped line break')!==-1&& typeof src==='string'&& src.indexOf('chrome-extension://')===0){if(e.preventDefault) e.preventDefault();console.debug('Suppressed extension SyntaxError from',src);return true;}}catch(ex){}},true);}catch(err){} })();</script>`;
+      const helperScript = `<script nonce="${nonce}">(function(){try{var s=document.getElementById('csp-stylefix');if(!s)return;})();</script>`;
+
+      if (/<head[^>]*>/i.test(out)) out = out.replace(/<head[^>]*>/i, m => m + headSuppress);
+      else out = headSuppress + out;
+
+      out = out.replace(/<\/body>/i, styleInject + helperScript + "</body>");
+      res.type("html").send(out);
+    });
+  }
+);
+
+// Clean redirect to the HTML file
+app.get("/admin/dashboard",
+  authenticateJWT,
+  checkRole("admin"),
+  (req, res) => res.redirect("/admin-dashboard.html")
+);
+
+// Protected index with nonce injection
+app.get(["/", "/index.html"], authenticateJWT, (req, res, next) => {
+  const filePath = path.join(__dirname, "public", "index.html");
+  fs.readFile(filePath, "utf8", (err, html) => {
+    if (err) return next(err);
+    const nonce = res.locals.cspNonce;
+
+    let out = html
+      .replace(/<script\b(?![^>]*\bsrc=)([^>]*)>/gi, `<script nonce="${nonce}"$1>`)
+      .replace(/<style\b([^>]*)>/gi, `<style nonce="${nonce}"$1>`);
+
+    const styleInject = `<style nonce="${nonce}" id="csp-stylefix"></style>`;
+    const headSuppress = `<script nonce="${nonce}">(function(){try{window.addEventListener('error',function(e){try{var msg=e&&(e.message||'');var src=e&&(e.filename||(e.error&&e.error.fileName)||'');if(typeof msg==='string'&& msg.indexOf('string literal contains an unescaped line break')!==-1&& typeof src==='string'&& src.indexOf('chrome-extension://')===0){if(e.preventDefault) e.preventDefault();console.debug('Suppressed extension SyntaxError from',src);return true;}}catch(ex){}},true);}catch(err){} })();</script>`;
+    const helperScript = `<script nonce="${nonce}">(function(){try{var s=document.getElementById('csp-stylefix');if(!s)return;})();</script>`;
+
+    if (/<head[^>]*>/i.test(out)) out = out.replace(/<head[^>]*>/i, m => m + headSuppress);
+    else out = headSuppress + out;
+
+    out = out.replace(/<\/body>/i, styleInject + helperScript + "</body>");
+    res.type("html").send(out);
+  });
+});
+
+app.use(express.static(path.join(__dirname, "public"), { index: false }));
+
 /* ------------------------------------------------------------------ */
 /*  Passport (Google OAuth)                                            */
 /* ------------------------------------------------------------------ */
@@ -466,29 +511,26 @@ app.get("/logout", authenticateJWT, (req, res) => {
 /* ------------------------------------------------------------------ */
 /*  Consent Routes                                                     */
 /* ------------------------------------------------------------------ */
-app.get("/consent", authenticateJWT, (req, res) => {
-  // This route is accessible if the user is logged in but hasn't given consent
-  res.sendFile(path.join(__dirname, "public", "consent.html"));
-});
+app.get("/consent", authenticateJWT, (req, res, next) => {
+  const filePath = path.join(__dirname, "public", "consent.html");
+  fs.readFile(filePath, "utf8", (err, html) => {
+    if (err) return next(err);
+    const nonce = res.locals.cspNonce;
 
-app.post("/api/consent", authenticateJWT, async (req, res) => {
-  try {
-    const { consentGiven, policyVersion } = req.body;
-    if (consentGiven !== true) {
-      return res.status(400).json({ message: "Consent must be given." });
-    }
+    let out = html
+      .replace(/<script\b(?![^>]*\bsrc=)([^>]*)>/gi, `<script nonce="${nonce}"$1>`)
+      .replace(/<style\b([^>]*)>/gi, `<style nonce="${nonce}"$1>`);
 
-    await User.findByIdAndUpdate(req.user.id, {
-      consentGiven: true,
-      consentTimestamp: new Date(),
-      consentPolicyVersion: policyVersion || "1.0",
-    });
+    const styleInject = `<style nonce="${nonce}" id="csp-stylefix"></style>`;
+    const headSuppress = `<script nonce="${nonce}">(function(){try{window.addEventListener('error',function(e){try{var msg=e&&(e.message||'');var src=e&&(e.filename||(e.error&&e.error.fileName)||'');if(typeof msg==='string'&& msg.indexOf('string literal contains an unescaped line break')!==-1&& typeof src==='string'&& src.indexOf('chrome-extension://')===0){if(e.preventDefault) e.preventDefault();console.debug('Suppressed extension SyntaxError from',src);return true;}}catch(ex){}},true);}catch(err){} })();</script>`;
+    const helperScript = `<script nonce="${nonce}">(function(){try{var s=document.getElementById('csp-stylefix');if(!s)return;})();</script>`;
 
-    res.status(200).json({ message: "Consent recorded successfully." });
-  } catch (err) {
-    console.error("Error recording consent:", err);
-    res.status(500).json({ message: "Server error while recording consent." });
-  }
+    if (/<head[^>]*>/i.test(out)) out = out.replace(/<head[^>]*>/i, m => m + headSuppress);
+    else out = headSuppress + out;
+
+    out = out.replace(/<\/body>/i, styleInject + helperScript + "</body>");
+    res.type("html").send(out);
+  });
 });
 
 /* ------------------------------------------------------------------ */
@@ -497,20 +539,6 @@ app.post("/api/consent", authenticateJWT, async (req, res) => {
 app.get("/protected-route", authenticateJWT, (_req, res) =>
   res.json({ message: "Access granted!" })
 );
-app.get("/", (req, res) => {
-  const token = req.cookies.token;
-  if (!token) return res.redirect("/login");
-  try {
-    const user = jwt.verify(token, process.env.JWT_SECRET);
-    req.user = user;
-    return res.sendFile(path.join(__dirname, "public", "index.html"));
-  } catch {
-    return res.redirect("/login");
-  }
-});
-app.get("/login", (_req, res) => {
-  res.sendFile(path.join(__dirname, "public", "login.html"));
-});
 // silence favicon 404s
 app.get("/favicon.ico", (_req, res) => res.status(204).end());
 app.get("/check", (req, res) => {
@@ -527,14 +555,7 @@ app.get("/api/current_user", authenticateJWT, async (req, res) => {
     res.status(500).json({ message: err.message });
   }
 });
-app.get(
-  "/admin/dashboard",
-  authenticateJWT,
-  checkRole("admin"),
-  (_req, res) => {
-    res.sendFile(path.join(__dirname, "public", "admin-dashboard.html"));
-  }
-);
+
 /* Users (admin) */
 app.get("/users", authenticateJWT, checkRole("admin"), async (_req, res) => {
   try {
