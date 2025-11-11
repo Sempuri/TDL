@@ -10,8 +10,23 @@ window.addEventListener("load", async () => {
   let images = []; // Array to hold image URLs
   let currentIndex = 0; // Index for cycling through images
 
+  let AUTH_BLOCKED = false;      // stop all further auth calls once 401/403 happens
+  let ROLE_CHECK_TIMER = null;   // store the setInterval id
+
+  function handleUnauthorized() {
+    if (AUTH_BLOCKED) return;
+    AUTH_BLOCKED = true;
+    if (ROLE_CHECK_TIMER) clearInterval(ROLE_CHECK_TIMER);
+    try { localStorage.clear(); } catch {}
+    window.location.replace('/login');   // hard redirect: stops JS + polls
+  }
+
   // Check if user is logged in
   const response = await fetch("/api/current_user", { credentials: "include" });
+  if (response.status === 401 || response.status === 403) {
+    handleUnauthorized();
+    return;
+  }
   const user = await response.json();
 
   const logoutButton = document.querySelector("#logout-button");
@@ -186,6 +201,11 @@ window.addEventListener("load", async () => {
         const response = await fetch("/api/export/tasks", {
           credentials: "include",
         });
+
+        if (response.status === 401 || response.status === 403) {
+          handleUnauthorized();
+          return;
+        }
 
         //check to handle rate limiting and other errors
         if (!response.ok) {
@@ -406,19 +426,20 @@ window.addEventListener("load", async () => {
 
   const fetchTasks = async () => {
     try {
-      const response = await fetch("/api/current_user");
-      const user = await response.json();
-
-      if (!user) {
-        window.location.href = "/login";
+      const response = await fetch("/api/current_user", { credentials: "include" });
+      if (response.status === 401 || response.status === 403) {
+        handleUnauthorized();
         return;
       }
-
+      const user = await response.json();
+      if (!user) {
+        handleUnauthorized();
+        return;
+      }
       const userId = user._id; // Assuming the API returns the user's ID
-      const responseTasks = await fetch(`/tasks?userId=${userId}`);
-
-      if (responseTasks.status === 401) {
-        window.location.href = "/login";
+      const responseTasks = await fetch(`/tasks?userId=${userId}`, { credentials: "include" });
+      if (responseTasks.status === 401 || responseTasks.status === 403) {
+        handleUnauthorized();
         return;
       }
 
@@ -763,11 +784,12 @@ window.addEventListener("load", async () => {
   // Function to cycle images from S3 storage
   const cycleImages = async () => {
     try {
-      const userResponse = await fetch("/api/current_user", {
-        credentials: "include",
-      });
+      const userResponse = await fetch("/api/current_user", { credentials: "include" });
+      if (userResponse.status === 401 || userResponse.status === 403) {
+        handleUnauthorized();
+        return;
+      }
       const user = await userResponse.json();
-
       if (!user) return;
 
       const userId = user._id; // Get user ID from API
@@ -817,29 +839,31 @@ window.addEventListener("load", async () => {
   let currentUserRole = null;
 
   async function checkRoleChange() {
+    if (AUTH_BLOCKED) return; // stop if we already saw 401
+  
     try {
       const res = await fetch("/api/current_user", { credentials: "include" });
-      if (res.ok) {
-        const user = await res.json();
-        // On first check, store the current role
-        if (!currentUserRole) {
-          currentUserRole = user.role;
-        } else if (currentUserRole !== user.role) {
-          alert(
-            `Your role has been updated to ${user.role}. You will now be logged out.`
-          );
-          await fetch("/auth/logout", {
-            method: "POST",
-            credentials: "include",
-          });
-          window.location.href = "/login";
-        }
+  
+      if (res.status === 401 || res.status === 403) {
+        handleUnauthorized();
+        return;
+      }
+  
+      const user = await res.json();
+      if (!user || !user.role) return;   // null-guard fixes the console error
+  
+      if (!currentUserRole) {
+        currentUserRole = user.role;
+      } else if (currentUserRole !== user.role) {
+        alert(`Your role has been updated to ${user.role}. You will now be logged out.`);
+        await fetch("/auth/logout", { method: "POST", credentials: "include" });
+        window.location.href = "/login";
       }
     } catch (error) {
-      console.error("Error checking user role:", error);
+      // optional: silent; any 401 is handled above
     }
   }
 
   // Check for role changes every 3 seconds
-  setInterval(checkRoleChange, 3000);
+  ROLE_CHECK_TIMER = setInterval(checkRoleChange, 3000);
 });
