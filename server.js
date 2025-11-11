@@ -511,7 +511,36 @@ app.get("/logout", authenticateJWT, (req, res) => {
 /* ------------------------------------------------------------------ */
 /*  Consent Routes                                                     */
 /* ------------------------------------------------------------------ */
-app.get("/consent", authenticateJWT, (req, res, next) => {
+
+app.post('/api/consent', authenticateJWT, async (req, res) => {
+  try {
+    const { accepted = true, policyVersion = 'v1.0' } = req.body || {};
+    if (!accepted) return res.status(400).json({ message: 'Consent not accepted.' });
+
+    await User.findByIdAndUpdate(req.user.id, {
+      consentGiven: true,
+      consentTimestamp: new Date(),
+      consentPolicyVersion: policyVersion
+    });
+
+    // No body necessary; client can redirect to "/"
+    return res.status(204).end();
+  } catch (e) {
+    console.error('Consent save error:', e);
+    return res.status(500).json({ message: 'Server error saving consent.' });
+  }
+});
+
+app.get("/consent", authenticateJWT, async (req, res, next) => {
+  try {
+    const u = await User.findById(req.user.id).select("consentGiven");
+    if (u?.consentGiven) {
+      return res.redirect("/");
+    }
+  } catch (e) {
+    // If DB check fails, we still render the consent page below
+  }
+    
   const filePath = path.join(__dirname, "public", "consent.html");
   fs.readFile(filePath, "utf8", (err, html) => {
     if (err) return next(err);
